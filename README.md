@@ -1,48 +1,50 @@
 # lizheng-mdb-to-old-txt
 
-Hermes skill for converting Lizheng new-version Access `.mdb` databases into old-version TXT interface files.
+用于将理正新版 Access `.mdb` 数据库转换为旧版软件可导入的 TXT 接口文件的 Hermes 技能与配套脚本仓库。
 
-## Files
+## 文件说明
 
-- `SKILL.md`: the Hermes skill definition
-- `convert_new_mdb_to_old.py`: Python exporter that reads `.mdb` with `mdbtools` and writes old-version TXT interface files
+- `SKILL.md`：Hermes 技能定义
+- `convert_new_mdb_to_old.py`：Python 导出脚本，使用 `mdbtools` 读取 `.mdb` 并生成旧版 TXT 接口文件
 
-## Purpose
+## 用途
 
-This repository stores the reusable Hermes skill distilled from a real-world workflow for:
-- reading `.mdb` with `mdbtools`
-- mapping known fields to old TXT interface segments
-- exporting `gb18030`-encoded TXT files
-- following validated Lizheng drillhole/project grouping rules
+这个仓库沉淀了一个已经在实际场景中验证过的工作流，主要用于：
 
-## Current TXT Output Rules
+- 使用 `mdbtools` 读取新版 `.mdb`
+- 按旧版接口分段输出 TXT 数据
+- 生成 `gb18030` 编码的接口文件
+- 按已确认规则输出钻孔与钻孔下属项目数据
 
-The current exporter follows these confirmed formatting rules for old-version Lizheng TXT interface files.
+## 当前 TXT 输出规则
 
-### 1. No field-name example header rows
+当前导出脚本遵循以下已经确认的旧版理正 TXT 接口文件格式规则。
 
-The output TXT must contain real data rows only.
+### 1. 不输出字段名示例表头行
 
-Incorrect:
+输出的 TXT 文件中应当直接写真实数据，不应把字段名示例行写进去。
+
+错误示例：
 
 ```text
 #GC#GCKCJD\tGCJSDW\t...
 详细勘察\t...
 ```
 
-Correct:
+正确示例：
 
 ```text
 #GC#详细勘察\t...
 ```
 
-### 2. Segment marker directly joins the first field value
+### 2. 段标记后直接接首字段值
 
-There must be:
-- no space after the marker
-- no extra tab after the marker
+段标记后面：
 
-Examples:
+- 不加空格
+- 不加额外 Tab
+
+例如：
 
 ```text
 #GC#详细勘察\t...
@@ -50,30 +52,30 @@ Examples:
 #TC#素填土\t...
 ```
 
-### 3. Drillhole main record format
+### 3. 钻孔主记录格式
 
-The drillhole master record stays on one line:
+钻孔主记录应保持为单行：
 
 ```text
 #ZK#钻孔编号\t钻孔类型\tX\tY\t...
 ```
 
-Example:
+例如：
 
 ```text
 #ZK#GZK1\t控制孔\t...
 ```
 
-### 4. Drillhole child-project grouping rule
+### 4. 钻孔下属项目分组规则
 
-For project segments that belong to a drillhole and contain `ZKBH` (such as `TC`, `BG`, `DT`, `SW`, and similar sections), output must be grouped like this:
+对于带 `ZKBH` 的钻孔下属项目分段（如 `TC`、`BG`、`DT`、`SW` 等），应按以下方式输出：
 
-1. output a standalone drillhole line first
-2. then output the project rows for that drillhole
-3. only emit that standalone `#ZK#钻孔编号` once per drillhole per project block
-4. when switching to the next drillhole, emit a new standalone `#ZK#钻孔编号`
+1. 先单独输出一行 `#ZK#钻孔编号`
+2. 再输出该钻孔对应的项目记录
+3. 同一个钻孔、同一个项目块内，只输出一次这个独立的 `#ZK#钻孔编号`
+4. 切换到下一个钻孔时，再输出新的 `#ZK#钻孔编号`
 
-Example:
+示例：
 
 ```text
 #ZK#GZK26
@@ -84,23 +86,24 @@ Example:
 #TC#素填土\t...
 ```
 
-### 5. No extra blank lines
+### 5. 不要输出多余空行
 
-The exporter writes Windows-style line endings (`\r\n`) and should not introduce blank rows between:
+导出脚本使用 Windows 风格换行（`\r\n`），并且不应在以下两类行之间插入空白行：
+
 - `#ZK#钻孔编号`
-- and its following child project rows
+- 其后紧跟的项目记录行
 
-### 6. Encoding
+### 6. 文件编码
 
-Generated TXT files use:
+生成的 TXT 文件编码为：
 
 - `gb18030`
 
-## Notes on Field Mapping
+## 字段映射说明
 
-### Confirmed alias mapping
+### 已确认的别名映射
 
-The `QY` segment includes confirmed alias mappings where the new database uses old field names with a trailing underscore, for example:
+`QY` 分段中，已经确认新版数据库存在一批“旧字段名后面多一个下划线”的字段，脚本中已做别名映射。例如：
 
 - `QYZLMD -> QYZLMD_`
 - `QYBZ -> QYBZ_`
@@ -109,23 +112,25 @@ The `QY` segment includes confirmed alias mappings where the new database uses o
 - `QYSY -> QYSY_`
 - `QYZXMD -> QYZXMD_`
 - `QYZDMD -> QYZDMD_`
-- and other confirmed `QY` underscore aliases already included in the script
+- 以及脚本中已经纳入的其他 `QY` 下划线别名字段
 
-### Conservative mapping areas
+### 当前仍采用保守映射的分段
 
-Some sections are still exported with a conservative strategy of “same-name direct mapping first, otherwise blank”, especially where business semantics are not yet fully confirmed. This particularly applies to complex consolidation-related sections such as:
+有些分段目前仍采用“同名直映射，缺失则留空”的保守策略，尤其是在业务语义尚未完全确认时。典型包括：
 
 - `GJ`
 - `GY`
 
-## Verification Checklist
+这类分段当前可以导出，但不应被宣称为“已完整业务映射”。
 
-After modifying the exporter, verify that:
+## 修改后验证清单
 
-- the TXT starts with real segment data, not comment lines or example headers
-- `#GC#`, `#ZK#`, `#TC#` markers directly touch the first data field
-- drillhole master records remain on one line
-- child project blocks emit a standalone `#ZK#钻孔编号` before project rows
-- the same drillhole/project block does not repeat the standalone `#ZK#钻孔编号`
-- there are no extra blank lines
-- the file encoding remains `gb18030`
+修改导出脚本后，至少应检查以下内容：
+
+- TXT 文件开头是否直接为真实分段数据，而不是注释行或字段示例表头
+- `#GC#`、`#ZK#`、`#TC#` 等段标记后是否直接连接首字段值
+- 钻孔主记录是否仍然保持单行
+- 钻孔下属项目块前是否先输出独立的 `#ZK#钻孔编号`
+- 同一个钻孔同一个项目块内是否没有重复输出独立的 `#ZK#钻孔编号`
+- 文件中是否没有多余空行
+- 文件编码是否仍为 `gb18030`
