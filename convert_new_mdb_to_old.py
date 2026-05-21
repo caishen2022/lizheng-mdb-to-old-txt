@@ -27,6 +27,7 @@ import os
 import shutil
 import subprocess
 import sys
+from collections import OrderedDict
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -237,6 +238,32 @@ class AccessTxtExporter:
                 line += "\t" + "\t".join(values[1:])
         return line
 
+    def _row_has_zkbh(self, row: Dict[str, Any]) -> bool:
+        return "ZKBH" in {k.upper() for k in row.keys()}
+
+    def iter_section_lines(self, section: SectionSpec, rows: List[Dict[str, Any]]) -> List[str]:
+        if section.id == "ZK" or not rows or not any(self._row_has_zkbh(row) for row in rows):
+            return [self.build_record_line(section, row) for row in rows]
+
+        grouped: "OrderedDict[str, List[Dict[str, Any]]]" = OrderedDict()
+        blank_zk_rows: List[Dict[str, Any]] = []
+
+        for row in rows:
+            source_map = {k.upper(): v for k, v in row.items()}
+            zkbh = self.format_value(source_map.get("ZKBH"))
+            if not zkbh:
+                blank_zk_rows.append(row)
+                continue
+            grouped.setdefault(zkbh, []).append(row)
+
+        lines: List[str] = []
+        for zkbh, group_rows in grouped.items():
+            lines.append(f"#ZK#{zkbh}")
+            lines.extend(self.build_record_line(section, row) for row in group_rows)
+
+        lines.extend(self.build_record_line(section, row) for row in blank_zk_rows)
+        return lines
+
     def _filter_rows(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if self.gcsy is None:
             return rows
@@ -250,33 +277,13 @@ class AccessTxtExporter:
 
     def export(self) -> List[str]:
         lines: List[str] = []
-        lines.append("; 由 Hermes 生成：新版 MDB -> 旧版理正接口 TXT")
-        lines.append(f"; 数据源: {self.db_path}")
-        lines.append("; 读取后端: mdbtools")
-        if self.gcsy is not None:
-            lines.append(f"; 过滤条件: gcsy = {self.gcsy}")
-        lines.append(f"; 生成时间: {_dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-
         summary: List[str] = []
         for section in SECTIONS:
             rows = self._filter_rows(self.reader.fetch_rows(section.table)) if self.reader.table_exists(section.table) else []
             if rows:
-                if section.id != "ZK" and any("ZKBH" in {k.upper() for k in row.keys()} for row in rows):
-                    current_zkbh = None
-                    for row in rows:
-                        source_map = {k.upper(): v for k, v in row.items()}
-                        zkbh = self.format_value(source_map.get("ZKBH"))
-                        if zkbh != current_zkbh:
-                            current_zkbh = zkbh
-                            if zkbh:
-                                lines.append(f"#ZK#{zkbh}")
-                        lines.append(self.build_record_line(section, row))
-                else:
-                    for row in rows:
-                        lines.append(self.build_record_line(section, row))
+                lines.extend(self.iter_section_lines(section, rows))
             elif self.include_empty_sections:
                 lines.append(section.record_prefix)
-                lines.append("")
             summary.append(f"{section.id}:{section.table} -> {len(rows)} 行")
 
         os.makedirs(os.path.dirname(self.output_path) or ".", exist_ok=True)
